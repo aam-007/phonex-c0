@@ -15,22 +15,32 @@ void forward_embeddings(int* inputs, Tensor* tok_emb, Tensor* pos_emb, Tensor* o
 
 void model_forward(Transformer* m, Activations* c, int* inputs, int len) {
     memcpy(c->inputs, inputs, len * sizeof(int));
+    
+    // [FIX 1] Set dynamic length for the tensors used in this pass
     c->emb_out.n = len; 
+    c->input_sum.n = len; 
+    
     forward_embeddings(inputs, &m->token_emb, &m->pos_emb, &c->input_sum);
     
     // Block 1: Norm -> Attn -> Res
     forward_layernorm(&c->input_sum, &m->ln1_g, &m->ln1_b, &c->ln1_out, &c->ln1_mean, &c->ln1_var);
+    
     c->att_scores.n = len; c->att_scores.d = len;
     c->att_probs.n = len; c->att_probs.d = len;
+    
     forward_attention(&c->ln1_out, m, c);
     
+    // [FIX 2] Ensure residual tensors match length
+    c->res1.n = len; 
     for (int i = 0; i < len * D_MODEL; i++) 
         c->res1.data[i] = c->input_sum.data[i] + c->o_out.data[i];
         
     // Block 2: Norm -> FFN -> Res
     forward_layernorm(&c->res1, &m->ln2_g, &m->ln2_b, &c->ln2_out, &c->ln2_mean, &c->ln2_var);
+    
     forward_ffn(&c->ln2_out, m, c);
     
+    c->res2.n = len;
     for (int i = 0; i < len * D_MODEL; i++) 
         c->res2.data[i] = c->res1.data[i] + c->ffn2.data[i];
         
@@ -67,7 +77,7 @@ void model_backward(Transformer* m, Activations* c) {
     }
 }
 
-// Memory and Init Helpers (kept here for brevity)
+// Memory and Init Helpers 
 void init_model(Transformer* m) {
     m->token_emb = tensor_alloc(VOCAB_SIZE, D_MODEL); tensor_init_xavier(&m->token_emb);
     m->pos_emb = tensor_alloc(SEQ_LEN, D_MODEL); tensor_init_xavier(&m->pos_emb);
@@ -137,7 +147,7 @@ void generate(Transformer* m, char* start_str, int max_new_tokens) {
         input_ids[len++] = next_token;
     }
     printf("\n");
-    // In real use, free 'c' internals here
+
 }
 
 int main() {
@@ -150,18 +160,27 @@ int main() {
     FILE* f = fopen("data/tiny_corpus.txt", "r");
     char text[1024];
     if (f) {
-        fgets(text, 1024, f);
+        if (!fgets(text, 1024, f)) strcpy(text, "hello world hello world");
         fclose(f);
     } else {
         strcpy(text, "hello world hello world");
     }
     
     int data_len = strlen(text);
+    // Ensure we don't overrun if file is too short
+    if (data_len < SEQ_LEN + 1) {
+        strcpy(text, "The quick brown fox jumps over the lazy dog. ");
+        data_len = strlen(text);
+    }
+
     int inputs[SEQ_LEN], targets[SEQ_LEN];
     
     printf("Training on: '%s' (len: %d)\n", text, data_len);
     
     for (int step = 0; step < 5000; step++) {
+        // [FIX 3] Zero gradients BEFORE forward pass (or at start of step)
+        reset_activations_grad(&cache);
+
         int start_idx = rand() % (data_len - 8 - 1);
         for (int i = 0; i < 8; i++) {
             inputs[i] = (int)text[start_idx + i];
@@ -169,14 +188,15 @@ int main() {
         }
         
         model_forward(&model, &cache, inputs, 8);
+        
         float loss = cross_entropy_loss(&cache, targets);
         if (step % 500 == 0) printf("%d\t%.4f\n", step, loss);
         
-        reset_activations_grad(&cache);
+        // DO NOT reset grads here, or you wipe the loss gradient!
         model_backward(&model, &cache);
         model_step(&model, 0.01f);
     }
     
-    generate(&model, "hell", 5);
+    generate(&model, "The", 10); // Generate a bit more
     return 0;
 }
