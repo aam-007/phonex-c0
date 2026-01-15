@@ -1,5 +1,3 @@
-// Implements Scaled Dot-Product Attention.
-
 #include "../include/phonex.h"
 
 void forward_attention(Tensor* x, Transformer* m, Activations* c) {
@@ -9,7 +7,6 @@ void forward_attention(Tensor* x, Transformer* m, Activations* c) {
     
     float scale = 1.0f / sqrtf((float)D_MODEL);
     
-    // Q * K^T + Causal Mask
     for (int i = 0; i < c->att_scores.n; i++) {
         for (int j = 0; j < c->att_scores.d; j++) {
             if (j > i) {
@@ -19,7 +16,14 @@ void forward_attention(Tensor* x, Transformer* m, Activations* c) {
                 for (int k = 0; k < D_MODEL; k++) {
                     score += c->q.data[i * D_MODEL + k] * c->k.data[j * D_MODEL + k];
                 }
-                c->att_scores.data[i * c->att_scores.d + j] = score * scale;
+                score *= scale;
+                
+                // [FIX 1] Hard Clamp Scores: Prevents exp(score) -> Infinity
+                // 30.0 is safe because exp(30) is ~1e13, well within float range
+                if (score > 30.0f) score = 30.0f;
+                if (score < -30.0f) score = -30.0f;
+                
+                c->att_scores.data[i * c->att_scores.d + j] = score;
             }
         }
     }
@@ -30,14 +34,10 @@ void forward_attention(Tensor* x, Transformer* m, Activations* c) {
 }
 
 void backward_attention(Tensor* x, Transformer* m, Activations* c) {
-    // 1. Output Projection
     backward_linear(&c->att_out, &m->w_o, NULL, &c->o_out);
+    matmul_c_bt_accum(&c->att_out, &c->v, &c->att_probs);
+    matmul_at_b_accum(&c->att_probs, &c->att_out, &c->v);
     
-    // 2. Weighted Sum
-    matmul_c_bt_accum(&c->att_out, &c->v, &c->att_probs); // dProbs
-    matmul_at_b_accum(&c->att_probs, &c->att_out, &c->v); // dV
-    
-    // 3. Softmax Backprop
     for (int i = 0; i < c->att_probs.n; i++) {
         float sum_grad_p = 0.0f;
         for (int j = 0; j < c->att_probs.d; j++) {
@@ -50,10 +50,8 @@ void backward_attention(Tensor* x, Transformer* m, Activations* c) {
         }
     }
     
-    // 4. Q and K
     float scale = 1.0f / sqrtf((float)D_MODEL);
     
-    // dQ
     for (int i = 0; i < c->att_scores.n; i++) {
         for (int j = 0; j < D_MODEL; j++) {
             float sum = 0.0f;
@@ -64,7 +62,6 @@ void backward_attention(Tensor* x, Transformer* m, Activations* c) {
         }
     }
     
-    // dK
     for (int i = 0; i < c->att_scores.d; i++) {
         for (int j = 0; j < D_MODEL; j++) {
             float sum = 0.0f;
