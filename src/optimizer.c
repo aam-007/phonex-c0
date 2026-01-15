@@ -1,6 +1,7 @@
+
 #include "../include/phonex.h"
 
-// Helper to clip gradients to avoid exploding values
+// Helper to clip gradients
 float clip(float val, float limit) {
     if (val > limit) return limit;
     if (val < -limit) return -limit;
@@ -9,13 +10,15 @@ float clip(float val, float limit) {
 
 void parameter_update(Tensor* t, float lr) {
     for (int i = 0; i < t->n * t->d; i++) {
-        // [FIX] Gradient Clipping: Clamp gradients between -5 and 5
-        // This is crucial for stability in raw C implementations
-        float clipped_grad = clip(t->grad[i], 5.0f);
+        float g = t->grad[i];
         
+        // [FIX] NaN Trap
+        if (isnan(g) || isinf(g)) {
+            g = 0.0f; // Ignore bad gradients
+        }
+        
+        float clipped_grad = clip(g, 1.0f); // Tighter clip
         t->data[i] -= lr * clipped_grad;
-        
-        // Zero grad after update
         t->grad[i] = 0.0f; 
     }
 }
@@ -37,3 +40,5 @@ void model_step(Transformer* m, float lr) {
     parameter_update(&m->ln2_b, lr);
     parameter_update(&m->w_final, lr);
 }
+
+

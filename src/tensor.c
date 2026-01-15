@@ -16,9 +16,12 @@ void tensor_free(Tensor* t) {
 }
 
 void tensor_init_xavier(Tensor* t) {
-    float scale = sqrtf(6.0f / (float)(t->n + t->d));
+    // [FIX] Reduce scale by 0.1 to prevent initial explosion
+    float scale = sqrtf(6.0f / (float)(t->n + t->d)) * 0.1f;
+    
     for (int i = 0; i < t->n * t->d; i++) {
-        t->data[i] = ((float)rand() / RAND_MAX * 2.0f - 1.0f) * scale;
+        float r = (float)rand() / (float)RAND_MAX;
+        t->data[i] = (r * 2.0f - 1.0f) * scale;
     }
 }
 
