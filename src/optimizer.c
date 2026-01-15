@@ -1,8 +1,21 @@
 #include "../include/phonex.h"
 
+// Helper to clip gradients to avoid exploding values
+float clip(float val, float limit) {
+    if (val > limit) return limit;
+    if (val < -limit) return -limit;
+    return val;
+}
+
 void parameter_update(Tensor* t, float lr) {
     for (int i = 0; i < t->n * t->d; i++) {
-        t->data[i] -= lr * t->grad[i];
+        // [FIX] Gradient Clipping: Clamp gradients between -5 and 5
+        // This is crucial for stability in raw C implementations
+        float clipped_grad = clip(t->grad[i], 5.0f);
+        
+        t->data[i] -= lr * clipped_grad;
+        
+        // Zero grad after update
         t->grad[i] = 0.0f; 
     }
 }

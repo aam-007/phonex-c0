@@ -254,7 +254,7 @@ int main() {
         model_backward(&model, &cache);
         
         // 6. Update
-        model_step(&model, 0.01f);
+        model_step(&model, 0.001f);
     }
     
     generate(&model, "The", 15);
