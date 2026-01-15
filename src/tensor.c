@@ -1,3 +1,5 @@
+// Handles raw memory and matrix multiplication logic.
+
 #include "../include/phonex.h"
 
 Tensor tensor_alloc(int n, int d) {
