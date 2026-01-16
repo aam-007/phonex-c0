@@ -1,5 +1,5 @@
 /*
- * Phonex-C1: Persistent Transformer
+ * Phonex-C0: Persistent Transformer
  * ---------------------------------
  * - Binary Weights Saving/Loading
  * - CLI Arguments (train/infer)
