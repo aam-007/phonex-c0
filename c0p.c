@@ -95,7 +95,7 @@ void matmul(Tensor* A, Tensor* B, Tensor* C) {
     }
 }
 
-// --- Persistence Layer (New) ---
+// --- Persistence Layer  ---
 
 void save_tensor(FILE* f, Tensor* t) {
     fwrite(&t->n, sizeof(int), 1, f);
